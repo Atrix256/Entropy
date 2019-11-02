@@ -93,6 +93,7 @@ void DoTest(const char* label, const void* data, uint64 length)
     printf("entropy<1> = %f\n", CalculateEntropyPerBit<1>(data, length));
     printf("entropy<4> = %f\n", CalculateEntropyPerBit<4>(data, length));
     printf("entropy<8> = %f\n", CalculateEntropyPerBit<8>(data, length));
+    printf("entropy<11> = %f\n", CalculateEntropyPerBit<11>(data, length));
     printf("entropy<12> = %f\n", CalculateEntropyPerBit<12>(data, length));
     printf("entropy<16> = %f\n", CalculateEntropyPerBit<16>(data, length));
 }
@@ -120,18 +121,13 @@ void DoFileTest(const char* fileName)
 
 int main(int argc, char** argv)
 {
-    // TODO: need to normalize the entropy to like... entropy per bit. Did you do it right?
-    // TODO: take min of entropy found?
-    // TODO: do all the other tests you wanted to do!
-
-    // TODO: longer text!
-    // test some text
-    {
-        const char* string = "I like big butts and i cannot lie";
-        DoTest("Short Text", string, strlen(string));
-    }
-
+    // file tests
     DoFileTest("Data/lastquestion.txt");
+    DoFileTest("Data/lastquestion.enc");
+    DoFileTest("Data/lastquestion.txt.zip");
+    DoFileTest("Data/lastquestion.enc.zip");
+    DoFileTest("Data/lastquestion.txt.zip.b64.txt");
+
     DoFileTest("Data/projbluenoise.txt");
     DoFileTest("Data/psychreport.txt");
     DoFileTest("Data/telltale.txt");
@@ -166,8 +162,32 @@ int main(int argc, char** argv)
 
 /*
 
+TODO:
+* blue noise to compare to white. should be lower entropy density.  Could use code from "Noise Dims" and link to that blog post as to how you generated the blue noise. maybe do red noise too.
+* non english language? random text? 6 vs 8 sided dice? images vs compressed images
+
+* maybe show graph of entropy per bit count for each test? make a csv i guess
+? do we need all those text files, or is 1 enough? probably 1 is enough.
+
 NOTES:
 * in smaller white noise case, larger bit patterns can't POSSIBLY occur (not enough bits) so they are biased results. Same is true of all data in fact.
 * you could find that study about there being 2 bits of info per letter. how does yours compare, and why?
+* the "byte based" streams show higher entropy for 11, 12 bits. that is kinda a lie though. explain why. the .zip doesnt show this and is more accurate / representative
+* notice how the encrypted file didn't compress any!
+* zipped and encrypted data increases entropy density. encryption does moreso.
+
+* you would take minimum of entropies reported as the real entropy. 
+
+* generated blue noise using techniques from here: https://blog.demofox.org/2019/07/30/dice-distributions-noise-colors/
+
+* megathread: https://twitter.com/Atrix256/status/1189699372704878592?s=20
+* another thread: https://twitter.com/Atrix256/status/1189933504294875136?s=20
+* also this: https://johncarlosbaez.wordpress.com/2011/10/28/the-complexity-barrier/
+* calculating entropy: http://webservices.itcs.umich.edu/mediawiki/lingwiki/index.php/Entropy
+* correlation decreases entropy
+
+* encryption command line:
+* openssl enc -aes-256-cbc -salt -in lastquestion.txt -out lastquestion.enc -pass pass:moreentropyplease
+
 
 */
