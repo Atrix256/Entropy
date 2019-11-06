@@ -1,6 +1,7 @@
 #include <vector>
 #include <stdint.h>
 #include <random>
+#include <functional>
 
 typedef uint64_t uint64;
 
@@ -86,16 +87,30 @@ float CalculateEntropyPerBit(const void* data_, uint64 length)
     }
 }
 
+struct TestEntry
+{
+    unsigned int value;
+    std::function<float(const void* data_, uint64 length)> function;
+};
+
+static const TestEntry c_testBitCounts[] =
+{
+    {1, CalculateEntropyPerBit<1>},
+    {4, CalculateEntropyPerBit<4>},
+    {8, CalculateEntropyPerBit<8>},
+    {11, CalculateEntropyPerBit<11>},
+    {12, CalculateEntropyPerBit<12>},
+    {16, CalculateEntropyPerBit<16>},
+};
 
 void DoTest(const char* label, const void* data, uint64 length)
 {
-    printf("\n%s (%u bits):\n", label, (unsigned int)length*8);
-    printf("entropy<1> = %f\n", CalculateEntropyPerBit<1>(data, length));
-    printf("entropy<4> = %f\n", CalculateEntropyPerBit<4>(data, length));
-    printf("entropy<8> = %f\n", CalculateEntropyPerBit<8>(data, length));
-    printf("entropy<11> = %f\n", CalculateEntropyPerBit<11>(data, length));
-    printf("entropy<12> = %f\n", CalculateEntropyPerBit<12>(data, length));
-    printf("entropy<16> = %f\n", CalculateEntropyPerBit<16>(data, length));
+    FILE* file = nullptr;
+    fopen_s(&file, "out/entropy.csv", "a+t");
+    fprintf(file, "\n\"%s\"", label);
+    for (unsigned int index = 0; index < _countof(c_testBitCounts); ++index)
+        fprintf(file, ",\"%f\"", c_testBitCounts[index].function(data, length));
+    fclose(file);
 }
 
 bool LoadFileIntoMemory(const char* fileName, std::vector<unsigned char>& data)
@@ -119,8 +134,20 @@ void DoFileTest(const char* fileName)
     DoTest(fileName, data.data(), data.size());
 }
 
+void ClearCSV()
+{
+    FILE* file = nullptr;
+    fopen_s(&file, "out/entropy.csv", "w+t");
+    fprintf(file, "\"test\"");
+    for (unsigned int index = 0; index < _countof(c_testBitCounts); ++index)
+        fprintf(file, ",\"%u\"", c_testBitCounts[index].value);
+    fclose(file);
+}
+
 int main(int argc, char** argv)
 {
+    ClearCSV();
+
     // file tests
     DoFileTest("Data/lastquestion.txt");
     DoFileTest("Data/lastquestion.enc");
@@ -156,17 +183,17 @@ int main(int argc, char** argv)
         DoTest("White Noise", randomNumbers.data(), randomNumbers.size() * sizeof(randomNumbers[0]));
     }
 
-    system("pause");
     return 0;
 }
 
 /*
 
 TODO:
-* blue noise to compare to white. should be lower entropy density.  Could use code from "Noise Dims" and link to that blog post as to how you generated the blue noise. maybe do red noise too.
-* non english language? random text? 6 vs 8 sided dice? images vs compressed images
+* create markov chains and calculate conditional entropy, to try and show how correlated values show up there, but not in the histogram approach!
 
-* maybe show graph of entropy per bit count for each test? make a csv i guess
+* blue noise to compare to white. should be lower entropy density.  Could use code from "Noise Dims" and link to that blog post as to how you generated the blue noise. maybe do red noise too.
+* non english language? random text? 6 vs 8 sided dice? images vs compressed images?
+
 ? do we need all those text files, or is 1 enough? probably 1 is enough.
 
 NOTES:
