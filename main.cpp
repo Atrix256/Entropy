@@ -88,82 +88,6 @@ float CalculateEntropyPerBit(const void* data_, uint64 length)
     }
 }
 
-template <uint64 NUMBITS, uint64 ORDER>
-float CalculateEntropyPerBitMarkovChain(const void* data_, uint64 length)
-{
-    // calculate a histogram with state (a markov chain but with counts instead of probabilities)
-    const char* data = (const char*)data_;
-    std::vector<uint64> histogram;
-    {
-        // prime the currentValue so that it's ready to take it's first real sample
-        uint64 currentValue = 0;
-        uint64 value = 0;
-        uint64 bitOffset = 0;
-        uint64 byteOffset = 0;
-        constexpr uint64 BITMASK = (uint64(1) << uint64(NUMBITS*(ORDER + 1))) - 1;
-        for (uint64 index = 0; index < ORDER; ++index)
-        {
-            GetNextValue<NUMBITS>(data, length, bitOffset, byteOffset, value);
-            currentValue = ((currentValue << NUMBITS) | value) & BITMASK;
-        }
-
-        // take samples until we run out of data
-        histogram.resize(BITMASK + 1);
-        while (GetNextValue<NUMBITS>(data, length, bitOffset, byteOffset, value))
-        {
-            currentValue = ((currentValue << NUMBITS) | value) & BITMASK;
-            histogram[currentValue]++;
-        }
-    }
-
-    // Calculate conditional entropy for each input group
-    //
-    // H(Y|X) = - Sum(p(x,y) * log(p(x,y)/p(x)))
-    // The conditional entropy of y given x is equal to the negative sum of:
-    //  * The joint probability of x and y multiplied by the log of:
-    //    * The joint probability of x and y divided by
-    //    * the probability of x
-    //
-    // x is the "previous values", y is the "current value"
-    //
-    // The conditional entropy of the current value given the previous values is equal to the negative sum of:
-    //  * The joint probability of the old value and the new value multiplied by the log of:
-    //    * The joint probability of the old value and the new value divided by
-    //    * The probability of the old value
-    //
-    constexpr uint64 INPUT_COUNT = (uint64(1) << uint64(NUMBITS*(ORDER)));
-    for (uint64 input = 0; input < INPUT_COUNT; ++input)
-    {
-        uint64 rangeStart = input << NUMBITS;
-        uint64 rangeEnd = (input + 1) << NUMBITS;
-
-        // get a total count for this input group so we can convert counts into probabilities
-        uint64 totalCount = 0;
-        for (uint64 currentValue = rangeStart; currentValue < rangeEnd; ++currentValue)
-            totalCount += histogram[currentValue];
-
-        // if none in this group, nothing to do
-        if (totalCount == 0)
-            continue;
-
-        for (uint64 currentValue = rangeStart; currentValue < rangeEnd; ++currentValue)
-        {
-            if (!histogram[currentValue])
-                continue;
-
-            float probability = float(histogram[currentValue]) / float(totalCount);
-            int ijkl = 0;
-            // TODO: continue
-            // TODO: maybe i should just calculate conditional probability instead and convert that to entropy? (can i?)
-        }
-
-        int ijkl = 0;
-    }
-
-
-    return 0.0f;
-}
-
 struct TestEntry
 {
     unsigned int value;
@@ -178,8 +102,6 @@ static const TestEntry c_testBitCounts[] =
     {11, CalculateEntropyPerBit<11>},
     {12, CalculateEntropyPerBit<12>},
     {16, CalculateEntropyPerBit<16>},
-    {8, CalculateEntropyPerBitMarkovChain<8, 1>},
-    {8, CalculateEntropyPerBitMarkovChain<8, 2>},
 };
 
 void DoTest(const char* label, const void* data, uint64 length)
@@ -220,7 +142,7 @@ void ClearCSV()
     fopen_s(&file, "out/entropy.csv", "w+t");
     fprintf(file, "\"test\"");
     for (unsigned int index = 0; index < _countof(c_testBitCounts); ++index)
-        fprintf(file, ",\"%u\"", c_testBitCounts[index].value);
+        fprintf(file, ",\"%u bits\"", c_testBitCounts[index].value);
     fclose(file);
 }
 
@@ -234,10 +156,6 @@ int main(int argc, char** argv)
     DoFileTest("Data/lastquestion.txt.zip");
     DoFileTest("Data/lastquestion.enc.zip");
     DoFileTest("Data/lastquestion.txt.zip.b64.txt");
-
-    DoFileTest("Data/projbluenoise.txt");
-    DoFileTest("Data/psychreport.txt");
-    DoFileTest("Data/telltale.txt");
 
     // small white noise
     {
@@ -269,28 +187,12 @@ int main(int argc, char** argv)
 /*
 
 TODO:
-? does an order 0 markov chain give you the same results? it should... try the function call?
- * we could remove the histogram code, but maybe worth keeping it around for readability?
-
-* create markov chains and calculate conditional entropy, to try and show how correlated values show up there, but not in the histogram approach!
-
-* maybe have the test entries let you have a label for the colum, so you can put info in about the order of the markov chain
-
 * blue noise to compare to white. should be lower entropy density.  Could use code from "Noise Dims" and link to that blog post as to how you generated the blue noise. maybe do red noise too.
 * non english language? random text? 6 vs 8 sided dice? images vs compressed images?
 
-? do we need all those text files, or is 1 enough? probably 1 is enough.
-
 NOTES:
-* calculating entropy is actually not possible. It basically boils down to K complexity: the shortest program which can reproduce data.
- * So, it's a search to find a "view" of data which has the least entropy.
- * That "view" is instructions on how to compress the data!
- * we can make a histogram and calculate probabilities and then entropy (and we do in this post)
- * It doesn't take "frequency" into account though, so then comes the markov chain and conditional entropy calculations, which are still not complete, just more possible views of the data out of the infinite sea of possible views.
- * Compressing data can be a good way to see how much entropy there is in something. Counter example: encrypted data doesn't compress but encrypted data has the same amount of entropy as the plain text, it's just obfuscated.
 
 * in smaller white noise case, larger bit patterns can't POSSIBLY occur (not enough bits) so they are biased results. Same is true of all data in fact.
-* you could find that study about there being 2 bits of info per letter. how does yours compare, and why?
 * the "byte based" streams show higher entropy for 11, 12 bits. that is kinda a lie though. explain why. the .zip doesnt show this and is more accurate / representative
 * notice how the encrypted file didn't compress any!
 * zipped and encrypted data increases entropy density. encryption does moreso.
