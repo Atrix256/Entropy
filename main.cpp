@@ -250,7 +250,7 @@ int main(int argc, char** argv)
         static std::mt19937 rng(GetRNGSeed());
 
         std::vector<float> randomNumbersFloat;
-        BestCandidateN(randomNumbersFloat, 10, rng, 1);
+        BestCandidateN(randomNumbersFloat, 10000, rng, 1);
 
         std::vector<uint8_t> randomNumbers;
         randomNumbers.reserve(randomNumbersFloat.size());
