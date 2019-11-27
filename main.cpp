@@ -146,6 +146,70 @@ void ClearCSV()
     fclose(file);
 }
 
+static void BestCandidateN(std::vector<float>& values, size_t numValues, std::mt19937& rng, const size_t c_blueNoiseSampleMultiplier)
+{
+    // if they want less samples than there are, just truncate the sequence
+    if (numValues <= values.size())
+    {
+        values.resize(numValues);
+        return;
+    }
+
+    static std::uniform_real_distribution<float> dist(0, 1);
+
+    // handle the special case of not having any values yet, so we don't check for it in the loops.
+    if (values.size() == 0)
+        values.push_back(dist(rng));
+
+    // make a sorted list of existing samples
+    std::vector<float> sortedValues;
+    sortedValues = values;
+    sortedValues.reserve(numValues);
+    values.reserve(numValues);
+    std::sort(sortedValues.begin(), sortedValues.end());
+
+    // use whatever samples currently exist, and just add to them, since this is a progressive sequence
+    for (size_t i = values.size(); i < numValues; ++i)
+    {
+        size_t numCandidates = values.size() * c_blueNoiseSampleMultiplier;
+        float bestDistance = 0.0f;
+        float bestCandidateValue = 0;
+        size_t bestCandidateInsertLocation = 0;
+        for (size_t candidate = 0; candidate < numCandidates; ++candidate)
+        {
+            float candidateValue = dist(rng);
+
+            // binary search the sorted value list to find the values it's closest to.
+            auto lowerBound = std::lower_bound(sortedValues.begin(), sortedValues.end(), candidateValue);
+            size_t insertLocation = lowerBound - sortedValues.begin();
+
+            // calculate the closest distance (torroidally) from this point to an existing sample by looking left and right.
+            float distanceLeft = (insertLocation > 0)
+                ? candidateValue - sortedValues[insertLocation - 1]
+                : 1.0f + candidateValue - *sortedValues.rbegin();
+
+            float distanceRight = (insertLocation < sortedValues.size())
+                ? sortedValues[insertLocation] - candidateValue
+                : distanceRight = 1.0f + sortedValues[0] - candidateValue;
+
+            // whichever is closer left vs right is the closer point distance
+            float minDist = std::min(distanceLeft, distanceRight);
+
+            // keep the best candidate seen
+            if (minDist > bestDistance)
+            {
+                bestDistance = minDist;
+                bestCandidateValue = candidateValue;
+                bestCandidateInsertLocation = insertLocation;
+            }
+        }
+
+        // take the best candidate and also insert it into the sorted values
+        sortedValues.insert(sortedValues.begin() + bestCandidateInsertLocation, bestCandidateValue);
+        values.push_back(bestCandidateValue);
+    }
+}
+
 int main(int argc, char** argv)
 {
     ClearCSV();
@@ -181,6 +245,24 @@ int main(int argc, char** argv)
         DoTest("White Noise", randomNumbers.data(), randomNumbers.size() * sizeof(randomNumbers[0]));
     }
 
+    // blue noise
+    {
+        static std::mt19937 rng(GetRNGSeed());
+
+        std::vector<float> randomNumbersFloat;
+        BestCandidateN(randomNumbersFloat, 10, rng, 1);
+
+        std::vector<uint8_t> randomNumbers;
+        randomNumbers.reserve(randomNumbersFloat.size());
+        for (float f : randomNumbersFloat)
+        {
+            f = std::min(f * 256.0f, 255.0f);
+            randomNumbers.push_back(uint8_t(f));
+        }
+
+        DoTest("Blue Noise", randomNumbers.data(), randomNumbers.size() * sizeof(randomNumbers[0]));
+    }
+
     return 0;
 }
 
@@ -188,14 +270,11 @@ int main(int argc, char** argv)
 
 TODO:
 * blue noise to compare to white. should be lower entropy density.  Could use code from "Noise Dims" and link to that blog post as to how you generated the blue noise. maybe do red noise too.
-* non english language? random text? 6 vs 8 sided dice? images vs compressed images?
 
 NOTES:
 
 * in smaller white noise case, larger bit patterns can't POSSIBLY occur (not enough bits) so they are biased results. Same is true of all data in fact.
 * the "byte based" streams show higher entropy for 11, 12 bits. that is kinda a lie though. explain why. the .zip doesnt show this and is more accurate / representative
-* notice how the encrypted file didn't compress any!
-* zipped and encrypted data increases entropy density. encryption does moreso.
 
 * you would take minimum of entropies reported as the real entropy. 
 
@@ -207,8 +286,35 @@ NOTES:
 * calculating entropy: http://webservices.itcs.umich.edu/mediawiki/lingwiki/index.php/Entropy
 * correlation decreases entropy
 
-* encryption command line:
-* openssl enc -aes-256-cbc -salt -in lastquestion.txt -out lastquestion.enc -pass pass:moreentropyplease
+
+
+Blue noise:
+
+Reroll A, take A - B.  B is constant....
+it's like triangular noise but you subtract out the entropy of one of the dice?
+
+1 - B : 
+2 - B :
+3 - B :
+4 - B :
+5 - B :
+6 - B : 
+
+
+
+All possible values:
+
+1 - 6 = -5
+6 - 1 = 5
+
+11 different values
+
+
+
+
+
+
+
 
 
 */
