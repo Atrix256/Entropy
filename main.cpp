@@ -2,11 +2,30 @@
 #include <stdint.h>
 #include <random>
 #include <functional>
+#include <chrono>
 
 typedef uint64_t uint64;
 
 #define DETERMINISTIC() true  // if true, will use the seed below for everything, else will randomly generate a seed.
 #define DETERMINISTIC_SEED() unsigned(783104853), unsigned(4213684301), unsigned(3526061164), unsigned(614346169), unsigned(478811579), unsigned(2044310268), unsigned(3671768129), unsigned(206439072)
+
+struct ScopedTimer
+{
+    ScopedTimer(const char* label)
+    {
+        printf("%s: ", label);
+        m_start = std::chrono::high_resolution_clock::now();
+    }
+
+    ~ScopedTimer()
+    {
+        std::chrono::high_resolution_clock::time_point end = std::chrono::high_resolution_clock::now();
+        std::chrono::duration<double> time_span = std::chrono::duration_cast<std::chrono::duration<double>>(end - m_start);
+        printf("%f ms\n", time_span.count() * 1000.0f);
+    }
+
+    std::chrono::high_resolution_clock::time_point m_start;
+};
 
 inline std::seed_seq& GetRNGSeed()
 {
@@ -126,7 +145,7 @@ void DoTest(const char* label, const void* data, uint64 length)
 bool LoadFileIntoMemory(const char* fileName, std::vector<unsigned char>& data)
 {
     FILE* file = nullptr;
-    fopen_s(&file, fileName, "rt");
+    fopen_s(&file, fileName, "rb");
     if (!file)
         return false;
     fseek(file, 0, SEEK_END);
@@ -155,8 +174,54 @@ void ClearCSV()
     fclose(file);
 }
 
+template <typename T>
+T Clamp(const T& x, const T& min, const T& max)
+{
+    if (x <= min)
+        return min;
+    else if (x >= max)
+        return max;
+    else
+        return x;
+}
+
+inline size_t GetLowerBound(const std::vector<float>& values, const float& searchValue)
+{
+#if 0
+    // since blue noise is roughly evenly distributed, i figure i'd try a linear interpolation
+    // guess for lower bound, then try a linear search. it's slower ):
+
+    // 855745.594400 ms for 100k
+
+    // returns the first index in values that is >= searchValue
+    size_t valueCount = values.size();
+    float guessIndexF = std::max(searchValue * float(valueCount) + 0.5f, 0.0f);
+    size_t guessIndex = std::min(size_t(guessIndexF), valueCount - 1);
+
+    // if our guess is too large, we need to scan backwards
+    if (values[guessIndex] >= searchValue)
+    {
+        while (guessIndex > 0 && values[guessIndex - 1] >= searchValue)
+            guessIndex--;
+    }
+    // else our guess was too low, so we need to scan forwards
+    else
+    {
+        while (guessIndex < valueCount && values[guessIndex] < searchValue)
+            guessIndex++;
+    }
+    return guessIndex;
+
+#else
+    //  619405.554500 ms for 100k
+    return std::lower_bound(values.begin(), values.end(), searchValue) - values.begin();
+#endif
+}
+
 static void BestCandidateN(std::vector<float>& values, size_t numValues, std::mt19937& rng, const size_t c_blueNoiseSampleMultiplier)
 {
+    ScopedTimer timer("BestCandidate N");
+
     // NOTE: this does a binary search to find where to test a candidate. A linear interpolation search would probably do lots better!
     printf("Generating %zu blue noise floats:\n", numValues);
 
@@ -199,8 +264,7 @@ static void BestCandidateN(std::vector<float>& values, size_t numValues, std::mt
         {
             float candidateValue = dist(rng);
 
-            auto lowerBound = std::lower_bound(sortedValues.begin(), sortedValues.end(), candidateValue);
-            size_t insertLocation = lowerBound - sortedValues.begin();
+            size_t insertLocation = GetLowerBound(sortedValues, candidateValue);
 
             // calculate the closest distance (torroidally) from this point to an existing sample by looking left and right.
             float distanceLeft = (insertLocation > 0)
@@ -227,6 +291,7 @@ static void BestCandidateN(std::vector<float>& values, size_t numValues, std::mt
         sortedValues.insert(sortedValues.begin() + bestCandidateInsertLocation, bestCandidateValue);
         values.push_back(bestCandidateValue);
     }
+    printf("\r100%%\n");
 }
 
 int main(int argc, char** argv)
@@ -298,6 +363,8 @@ int main(int argc, char** argv)
             fprintf(file, "%u\n", u);
         fclose(file);
     }
+
+    system("pause");
 
     return 0;
 }
