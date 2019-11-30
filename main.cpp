@@ -40,19 +40,27 @@ inline bool GetNextBit(const char* data, uint64 length, uint64& bitOffset, uint6
     return true;
 }
 
-template <uint64 NUMBITS>
+template <uint64 NUMBITS, uint64 ADVANCEMENTBITS>
 bool GetNextValue(const char* data, uint64 length, uint64& bitOffset, uint64& byteOffset, uint64& value)
 {
+    uint64 startingBitOffset = bitOffset;
+    uint64 startingByteOffset = byteOffset;
+
     value = 0;
     for (uint64 index = 0; index < NUMBITS; ++index)
     {
         if (!GetNextBit(data, length, bitOffset, byteOffset, value))
             return false;
     }
+
+    // the caller may not want us to move forward the full amount
+    bitOffset = startingBitOffset + ADVANCEMENTBITS;
+    byteOffset = startingByteOffset + bitOffset / 8;
+    bitOffset = bitOffset % 8;
     return true;
 }
 
-template <uint64 NUMBITS>
+template <uint64 NUMBITS, uint64 ADVANCEMENTBITS>
 float CalculateEntropyPerBit(const void* data_, uint64 length)
 {
     // calculate a histogram
@@ -63,7 +71,7 @@ float CalculateEntropyPerBit(const void* data_, uint64 length)
         uint64 bitOffset = 0;
         uint64 byteOffset = 0;
         uint64 value;
-        while (GetNextValue<NUMBITS>(data, length, bitOffset, byteOffset, value))
+        while (GetNextValue<NUMBITS, ADVANCEMENTBITS>(data, length, bitOffset, byteOffset, value))
             histogram[value]++;
     }
 
@@ -90,25 +98,26 @@ float CalculateEntropyPerBit(const void* data_, uint64 length)
 
 struct TestEntry
 {
-    unsigned int value;
     std::function<float(const void* data_, uint64 length)> function;
+    const char* label;
 };
 
 static const TestEntry c_testBitCounts[] =
 {
-    {1, CalculateEntropyPerBit<1>},
-    {4, CalculateEntropyPerBit<4>},
-    {8, CalculateEntropyPerBit<8>},
-    {11, CalculateEntropyPerBit<11>},
-    {12, CalculateEntropyPerBit<12>},
-    {16, CalculateEntropyPerBit<16>},
+    {CalculateEntropyPerBit<1, 1>, "1 bit"},
+    {CalculateEntropyPerBit<4, 4>, "4 bits"},
+    {CalculateEntropyPerBit<8, 8>, "8 bits"},
+    {CalculateEntropyPerBit<11, 11>, "11 bits"},
+    {CalculateEntropyPerBit<12, 12>, "12 bits"},
+    {CalculateEntropyPerBit<16, 16>, "16 bits"},
+    {CalculateEntropyPerBit<16, 8>, "8 bits order 1"},
 };
 
 void DoTest(const char* label, const void* data, uint64 length)
 {
     FILE* file = nullptr;
     fopen_s(&file, "out/entropy.csv", "a+t");
-    fprintf(file, "\n\"%s\"", label);
+    fprintf(file, "\n\"%s\",\"%zu\"", label, length);
     for (unsigned int index = 0; index < _countof(c_testBitCounts); ++index)
         fprintf(file, ",\"%f\"", c_testBitCounts[index].function(data, length));
     fclose(file);
@@ -140,14 +149,17 @@ void ClearCSV()
 {
     FILE* file = nullptr;
     fopen_s(&file, "out/entropy.csv", "w+t");
-    fprintf(file, "\"test\"");
+    fprintf(file, "\"test\",\"bytes\"");
     for (unsigned int index = 0; index < _countof(c_testBitCounts); ++index)
-        fprintf(file, ",\"%u bits\"", c_testBitCounts[index].value);
+        fprintf(file, ",\"%s\"", c_testBitCounts[index].label);
     fclose(file);
 }
 
 static void BestCandidateN(std::vector<float>& values, size_t numValues, std::mt19937& rng, const size_t c_blueNoiseSampleMultiplier)
 {
+    // NOTE: this does a binary search to find where to test a candidate. A linear interpolation search would probably do lots better!
+    printf("Generating %zu blue noise floats:\n", numValues);
+
     // if they want less samples than there are, just truncate the sequence
     if (numValues <= values.size())
     {
@@ -169,8 +181,16 @@ static void BestCandidateN(std::vector<float>& values, size_t numValues, std::mt
     std::sort(sortedValues.begin(), sortedValues.end());
 
     // use whatever samples currently exist, and just add to them, since this is a progressive sequence
+    int lastPercent = -1;
     for (size_t i = values.size(); i < numValues; ++i)
     {
+        int percent = int(100.0f * float(i) / float(numValues));
+        if (percent != lastPercent)
+        {
+            lastPercent = percent;
+            printf("\r%i%%", lastPercent);
+        }
+
         size_t numCandidates = values.size() * c_blueNoiseSampleMultiplier;
         float bestDistance = 0.0f;
         float bestCandidateValue = 0;
@@ -179,7 +199,6 @@ static void BestCandidateN(std::vector<float>& values, size_t numValues, std::mt
         {
             float candidateValue = dist(rng);
 
-            // binary search the sorted value list to find the values it's closest to.
             auto lowerBound = std::lower_bound(sortedValues.begin(), sortedValues.end(), candidateValue);
             size_t insertLocation = lowerBound - sortedValues.begin();
 
@@ -238,11 +257,17 @@ int main(int argc, char** argv)
         static std::mt19937 rng(GetRNGSeed());
         static std::uniform_int_distribution<uint64> dist;
 
-        std::vector<uint64> randomNumbers(100000);
+        std::vector<uint64> randomNumbers(12500); // so it's 100k 8 bit values and can be compared apples to apples with the 100k 8 bit blue noise values
         for (uint64& v : randomNumbers)
             v = dist(rng);
 
         DoTest("White Noise", randomNumbers.data(), randomNumbers.size() * sizeof(randomNumbers[0]));
+
+        FILE* file = nullptr;
+        fopen_s(&file, "out/white_noise_u64.txt", "w+t");
+        for (uint64 u : randomNumbers)
+            fprintf(file, "%zu\n", u);
+        fclose(file);
     }
 
     // blue noise
@@ -250,7 +275,7 @@ int main(int argc, char** argv)
         static std::mt19937 rng(GetRNGSeed());
 
         std::vector<float> randomNumbersFloat;
-        BestCandidateN(randomNumbersFloat, 10000, rng, 1);
+        BestCandidateN(randomNumbersFloat, 100000, rng, 1);
 
         std::vector<uint8_t> randomNumbers;
         randomNumbers.reserve(randomNumbersFloat.size());
@@ -261,6 +286,17 @@ int main(int argc, char** argv)
         }
 
         DoTest("Blue Noise", randomNumbers.data(), randomNumbers.size() * sizeof(randomNumbers[0]));
+
+        FILE* file = nullptr;
+        fopen_s(&file, "out/blue_noise_f32.txt","w+t");
+        for (float f : randomNumbersFloat)
+            fprintf(file, "%f\n", f);
+        fclose(file);
+
+        fopen_s(&file, "out/blue_noise_u8.txt", "w+t");
+        for (uint8_t u : randomNumbers)
+            fprintf(file, "%u\n", u);
+        fclose(file);
     }
 
     return 0;
