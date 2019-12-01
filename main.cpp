@@ -152,7 +152,7 @@ bool LoadFileIntoMemory(const char* fileName, std::vector<unsigned char>& data)
     data.resize(ftell(file));
     fseek(file, 0, SEEK_SET);
     size_t actuallyRead = fread(data.data(), 1, data.size(), file);
-    data.resize(actuallyRead); // strangely, i was seeing the ftell above give a different value (larger) than the actual amount of bytes readable.
+    data.resize(actuallyRead);
     fclose(file);
     return true;
 }
@@ -189,7 +189,7 @@ inline size_t GetLowerBound(const std::vector<float>& values, const float& searc
 {
 #if 0
     // since blue noise is roughly evenly distributed, i figure i'd try a linear interpolation
-    // guess for lower bound, then try a linear search. it's slower ):
+    // guess for lower bound, then try a linear search. it's slower for some reason though.
 
     // 855745.594400 ms for 100k
 
@@ -222,7 +222,6 @@ static void BestCandidateN(std::vector<float>& values, size_t numValues, std::mt
 {
     ScopedTimer timer("BestCandidate N");
 
-    // NOTE: this does a binary search to find where to test a candidate. A linear interpolation search would probably do lots better!
     printf("Generating %zu blue noise floats:\n", numValues);
 
     // if they want less samples than there are, just truncate the sequence
@@ -368,22 +367,3 @@ int main(int argc, char** argv)
 
     return 0;
 }
-
-/*
-
-NOTES:
-
-* in smaller white noise case, larger bit patterns can't POSSIBLY occur (not enough bits) so they are biased results. Same is true of all data in fact.
-* the "byte based" streams show higher entropy for 11, 12 bits. that is kinda a lie though. explain why. the .zip doesnt show this and is more accurate / representative
-
-* you would take minimum of entropies reported as the real entropy. 
-
-* generated blue noise using techniques from here: https://blog.demofox.org/2019/07/30/dice-distributions-noise-colors/
-
-* megathread: https://twitter.com/Atrix256/status/1189699372704878592?s=20
-* another thread: https://twitter.com/Atrix256/status/1189933504294875136?s=20
-* also this: https://johncarlosbaez.wordpress.com/2011/10/28/the-complexity-barrier/
-* calculating entropy: http://webservices.itcs.umich.edu/mediawiki/lingwiki/index.php/Entropy
-* correlation decreases entropy
-
-*/
