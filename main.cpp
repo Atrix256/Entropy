@@ -371,9 +371,6 @@ int main(int argc, char** argv)
 
 /*
 
-TODO:
-* blue noise to compare to white. should be lower entropy density.  Could use code from "Noise Dims" and link to that blog post as to how you generated the blue noise. maybe do red noise too.
-
 NOTES:
 
 * in smaller white noise case, larger bit patterns can't POSSIBLY occur (not enough bits) so they are biased results. Same is true of all data in fact.
@@ -388,36 +385,5 @@ NOTES:
 * also this: https://johncarlosbaez.wordpress.com/2011/10/28/the-complexity-barrier/
 * calculating entropy: http://webservices.itcs.umich.edu/mediawiki/lingwiki/index.php/Entropy
 * correlation decreases entropy
-
-
-
-Blue noise:
-
-Reroll A, take A - B.  B is constant....
-it's like triangular noise but you subtract out the entropy of one of the dice?
-
-1 - B : 
-2 - B :
-3 - B :
-4 - B :
-5 - B :
-6 - B : 
-
-
-
-All possible values:
-
-1 - 6 = -5
-6 - 1 = 5
-
-11 different values
-
-
-
-
-
-
-
-
 
 */
